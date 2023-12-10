@@ -1,0 +1,153 @@
+---
+- name: Install Nginx, PHP, MariaDB, and software-properties-common on Ubuntu
+  hosts: lemp
+  become: yes
+
+  tasks:
+
+    - name: Display Login User
+      debug:
+        var: ansible_user
+    - name: Check if Apache2 is installed
+      command: dpkg -l | grep apache2
+      register: apache2_installed
+      ignore_errors: true  # We expect a failure if Apache2 is not installed
+
+    - name: Uninstall Apache2 if installed
+      apt:
+        name: apache2
+        state: absent
+      when: apache2_installed.stdout != ""
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install software-properties-common
+      apt:
+        name: software-properties-common
+        state: present
+
+    - name: Add ondrej/php repository
+      apt_repository:
+        repo: ppa:ondrej/php
+        state: present
+
+    - name: Update apt cache after adding the repository
+      apt:
+        update_cache: yes
+
+    - name: Remove the default Nginx configuration
+      file:
+        path: /etc/nginx/sites-available/default
+        state: absent
+      when: ansible_distribution == "Ubuntu"
+  
+
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Remove the default Nginx configuration
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Install Python 3
+      apt:
+        name: python3
+        state: present  # Ensure Python 3 is installed
+    - name: Install pip3
+      apt:
+        name: python3-pip
+        state: present
+    - name: Install PyMySQL using pip
+      pip:
+        name: pymysql
+        state: present
+    - name: Install PHP packages
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - phpmyadmin
+        - php-mbstring
+        - php-zip
+        - php-gd
+        - php-json
+        - php-curl
+
+    - name: Install PHP-FPM
+      apt:
+        name: php-fpm
+        state: present
+
+    - name: Install MariaDB Server
+      apt:
+        name: mariadb-server
+        state: present
+
+   
+    - name: Create Nginx server block for PHP
+      template:
+        src: php-site.conf.j2  # Adjust the source file name to your actual template file
+        dest: /etc/nginx/sites-available/php-site
+      notify:
+        - Reload Nginx
+
+    - name: Enable Nginx server block
+      file:
+        src: /etc/nginx/sites-available/php-site
+        dest: /etc/nginx/sites-enabled/php-site
+        state: link
+      notify:
+        - Reload Nginx
+
+    - name: Download phpMyAdmin archive
+      get_url:
+        url: https://files.phpmyadmin.net/phpMyAdmin/{{ phpmyadmin_version }}/phpMyAdmin-{{ phpmyadmin_version }}-all-languages.tar.gz
+        dest: /tmp/phpmyadmin.tar.gz
+        mode: 0644
+      vars:
+        phpmyadmin_version: 5.1.1  # Update to the latest phpMyAdmin version
+
+    - name: Extract phpMyAdmin
+      unarchive:
+        src: /tmp/phpmyadmin.tar.gz
+        dest: /var/www/html/
+        remote_src: yes
+        owner: www-data
+        group: www-data
+      notify:
+        - Reload Nginx
+    - name: Copy script.sh to the remote server
+      copy:
+        src: create_mysqluser.sh  # Replace with the actual local path to your script
+        dest: ~/script.sh  # Replace with the desired remote path
+        mode: '0755'  # Make the script executable
+      register: copy_result
+    
+    - name: Execute script with /bin/bash
+      shell: /bin/bash ~/script.sh
+    
+    - name: Delete directory
+      file:
+        path: "/home/{{ansible_user}}/phpmyadmin_files"
+        state: absent
+    - name: Move phpMyAdmin folder
+      shell: mv /var/www/html/phpMyAdmin-5.1.1-all-languages /home/{{ansible_user}}/phpmyadmin_files
+    
+    - name: Delete files /var/www/html
+      shell: rm -f -r /var/www/html/*
+  
+    - name: Move phpMyAdmin folder
+      shell: mv /home/{{ansible_user}}/phpmyadmin_files/* /var/www/html
+    
+  
+  handlers:
+    - name: Reload Nginx
+      service:
+        name: nginx
+        state: reloaded

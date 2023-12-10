@@ -1,0 +1,13 @@
+---
+- name: Copy and execute script.sh
+  hosts: lemp
+  become: yes
+
+  tasks:
+    - name: Copy script.sh to the remote server
+      copy:
+        src: create_mysqluser.sh  # Replace with the actual local path to your script
+        dest: /home/user1/script.sh  # Replace with the desired remote path
+        mode: '0755'  # Make the script executable
+      register: copy_result
+
