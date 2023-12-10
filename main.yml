@@ -1,6 +1,6 @@
 ---
 - name: Install Nginx, PHP, MariaDB, and software-properties-common on Ubuntu
-  hosts: my_webservers
+  hosts: my_servers
   become: yes
 
   tasks:
